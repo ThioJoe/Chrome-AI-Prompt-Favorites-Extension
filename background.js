@@ -6,23 +6,73 @@ const NO_CONFIG_MENU_ID = "noConfigForSite";
 const PROMPTS_KEY = 'prompts';
 const CONFIGS_KEY = 'siteConfigs';
 
-// --- Helper Function to Inject Text (Unchanged) ---
+// --- Helper Function to Inject Text (Updated for Cursor Position) ---
+// This function will be executed IN THE CONTEXT OF THE WEBPAGE
 function injectTextIntoElement(textToInject, xpath) {
     try {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const targetElement = result.singleNodeValue;
+
         if (targetElement) {
-            targetElement.focus();
+            targetElement.focus(); // Focus the element first
+
+            let textLength = textToInject.length;
+
+            // Set value based on element type
             if (targetElement.isContentEditable) {
+                 // For contentEditable divs
                 targetElement.textContent = textToInject;
+                // Content length might differ slightly if browser normalizes whitespace,
+                // but using original length is usually sufficient for cursor placement.
+                // More robust: Recalculate based on targetElement.textContent.length if needed.
+                textLength = targetElement.textContent.length;
+
             } else if (targetElement.value !== undefined) {
+                // For input/textarea
                 targetElement.value = textToInject;
+                textLength = targetElement.value.length; // Use actual length after setting
             } else {
+                 // Fallback attempt
                  targetElement.innerText = textToInject;
+                 textLength = targetElement.innerText.length;
             }
+
+
+            // Simulate input to make web frameworks (React, etc.) recognize the change
+            // Dispatch *before* setting cursor, as some frameworks might react to input
+            // and potentially interfere with cursor setting otherwise.
             targetElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
             targetElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-            console.log('Prompt Inserted via context menu.');
+
+            // Set cursor position to the end ---
+            if (targetElement.setSelectionRange) {
+                // For <input> and <textarea>
+                try {
+                    targetElement.setSelectionRange(textLength, textLength);
+                } catch (e) {
+                    console.warn("Prompt Favorites: Could not set selection range (common in non-text inputs).", e);
+                }
+            } else if (targetElement.isContentEditable) {
+                // For contentEditable elements
+                try {
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    // Select all content within the element
+                    range.selectNodeContents(targetElement);
+                    // Collapse the range to the end point. false means collapse to end.
+                    range.collapse(false);
+                    // Remove any existing selections
+                    selection.removeAllRanges();
+                    // Add the new collapsed range, placing the cursor at the end
+                    selection.addRange(range);
+                } catch (e) {
+                     console.warn("Prompt Favorites: Could not set cursor in contentEditable element.", e);
+                }
+            }
+            // --- End NEW ---
+
+
+            console.log('Prompt Inserted via context menu (Cursor positioned at end).');
         } else {
             console.error('Prompt Favorites: Target element not found for XPath:', xpath);
         }
