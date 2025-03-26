@@ -25,6 +25,10 @@ Quickly insert pre-saved text prompts into websites using the right-click menu. 
 5.  In the file selection dialog, navigate to and select the directory containing the extension's files.
 6.  The "Prompt Favorites (Context Menu)" extension should now appear in your list of extensions.
 
+## How to Access the Options
+- If you have the extension pinned, you can right click its icon and click `Options`
+- If it's not pinned, click the puzzle-piece icon at the top right of chrome, find the extension in the list, click the three dots, and click `Options`
+
 ## Finding the XPath for a Text Box
 
 To tell the extension exactly where to insert text on a webpage, you need to provide its "XPath". Here's how to find it:
