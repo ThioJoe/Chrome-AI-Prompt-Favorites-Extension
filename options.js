@@ -39,7 +39,7 @@ async function loadItems(key, listElement, loadingElement, renderFunction, postL
 async function saveItems(key, items, shouldNotify = true) { /* ... */ try { await chrome.storage.local.set({ [key]: items }); console.log(`Items saved to storage for key "${key}".`); if (shouldNotify) { notifyBackgroundPage(); } } catch (error) { console.error(`Error saving items for key "${key}":`, error); throw error; } }
 
 
-// --- Prompt Specific Functions (UPDATED renderPrompt, addNewPrompt, saveEditedPrompt) ---
+// --- Prompt Specific Functions  ---
 
 // Helper to create insert mode radio buttons
 function createInsertModeRadios(promptId, selectedMode = 'replace', isEditArea = false) {
@@ -81,10 +81,18 @@ function renderPrompt(prompt, index) {
     li.dataset.id = prompt.id;
     const currentInsertMode = prompt.insertMode || 'replace'; // Default to replace
 
-    // Basic prompt info
+    // --- NEW: Truncate content for preview ---
+    const maxPreviewLength = 150; // Max characters for preview
+    let previewContent = prompt.content || '';
+    if (previewContent.length > maxPreviewLength) {
+        previewContent = previewContent.substring(0, maxPreviewLength) + '...';
+    }
+    // --- End NEW ---
+
+    // Basic prompt info - uses previewContent for the <pre> tag
     li.innerHTML = `
         <h3 class="prompt-title">${escapeHtml(prompt.title || `Prompt ${index + 1}`)}</h3>
-        <pre class="prompt-content">${escapeHtml(prompt.content || '')}</pre>
+        <pre class="prompt-content">${escapeHtml(previewContent)}</pre>
         <div class="insert-mode-display"></div>
         <div class="enabled-sites-container"></div>
         <button class="btn-edit">Edit</button>
@@ -93,7 +101,9 @@ function renderPrompt(prompt, index) {
             <label>Edit Title:</label>
             <input type="text" class="edit-title" value="${escapeHtml(prompt.title || '')}">
             <label>Edit Content:</label>
+            {/* Use the FULL, non-truncated content in the edit textarea */}
             <textarea class="edit-content">${escapeHtml(prompt.content || '')}</textarea>
+            {/* Insertion mode radios for EDIT AREA added here */}
             <div class="insert-mode-edit"></div>
             <button class="btn-save-edit">Save Changes</button>
             <button class="btn-cancel-edit">Cancel</button>
@@ -103,16 +113,14 @@ function renderPrompt(prompt, index) {
     // Render and Insert Insertion Mode Radios (View Mode)
     const insertModeDisplayContainer = li.querySelector('.insert-mode-display');
     const viewRadios = createInsertModeRadios(prompt.id, currentInsertMode, false);
-    // Add change listener to view mode radios to save immediately
     viewRadios.querySelectorAll('input[type="radio"]').forEach(radio => {
         radio.addEventListener('change', handleInsertModeChange);
     });
     insertModeDisplayContainer.appendChild(viewRadios);
 
-
     // Render and Insert Insertion Mode Radios (Edit Mode)
     const insertModeEditContainer = li.querySelector('.insert-mode-edit');
-    const editRadios = createInsertModeRadios(prompt.id, currentInsertMode, true); // Pass true for edit area
+    const editRadios = createInsertModeRadios(prompt.id, currentInsertMode, true);
     insertModeEditContainer.appendChild(editRadios);
 
 
@@ -131,11 +139,11 @@ function renderPrompt(prompt, index) {
             const label = document.createElement('label');
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.dataset.configId = config.id; // Store config ID
+            checkbox.dataset.configId = config.id;
             checkbox.checked = prompt.enabledSites ? (prompt.enabledSites[config.id] !== false) : true;
-            checkbox.addEventListener('change', handleEnabledSiteChange); // Add listener
+            checkbox.addEventListener('change', handleEnabledSiteChange);
             label.appendChild(checkbox);
-            label.appendChild(document.createTextNode(` ${escapeHtml(config.name || config.urlPattern)}`)); // Use name or pattern
+            label.appendChild(document.createTextNode(` ${escapeHtml(config.name || config.urlPattern)}`));
             siteLi.appendChild(label);
             list.appendChild(siteLi);
         });
@@ -176,15 +184,23 @@ async function handleInsertModeChange(event) {
 }
 
 async function addNewPrompt() {
-    const title = newPromptTitleInput.value.trim();
-    const content = newPromptContentInput.value.trim();
-    // Get selected insert mode from the "Add" form
+    const title = newPromptTitleInput.value.trim(); // Keep trim for title
+    // const content = newPromptContentInput.value.trim(); // REMOVED .trim() for content
+    const content = newPromptContentInput.value; // Get raw value including trailing whitespace/newlines
     const insertMode = document.querySelector('input[name="new_insert_mode"]:checked')?.value || 'replace';
 
-    if (!title || !content) {
-        displayStatus(statusPromptDiv, "Both title and content are required.", true);
+    // Still check if title is empty, but allow content that is only whitespace/newlines
+    if (!title) {
+        displayStatus(statusPromptDiv, "Prompt Title is required.", true);
         return;
     }
+     // Check if content is completely empty (useful to prevent saving truly blank prompts)
+     // Allow saving if it contains only whitespace/newlines as requested
+     if (content === '') {
+          displayStatus(statusPromptDiv, "Prompt Text cannot be completely empty.", true);
+          return;
+     }
+
 
     try {
         const result = await chrome.storage.local.get(PROMPTS_KEY);
@@ -194,19 +210,19 @@ async function addNewPrompt() {
 
         const newPrompt = {
             id: generateId('prompt'),
-            title: title,
-            content: content,
-            insertMode: insertMode, // Save selected mode
+            title: title, // Trimmed title
+            content: content, // Raw content (preserving trailing newlines)
+            insertMode: insertMode,
             enabledSites: initialEnabledSites
         };
 
         prompts.push(newPrompt);
         await saveItems(PROMPTS_KEY, prompts);
 
-        // Clear form (including resetting radio buttons)
+        // Clear form
         newPromptTitleInput.value = '';
         newPromptContentInput.value = '';
-        document.querySelector('input[name="new_insert_mode"][value="replace"]').checked = true; // Reset add form radio
+        document.querySelector('input[name="new_insert_mode"][value="replace"]').checked = true;
         displayStatus(statusPromptDiv, "Prompt saved successfully!");
         await loadItems(PROMPTS_KEY, promptList, loadingPromptsLi, renderPrompt); // Refresh list
     } catch (error) {
@@ -219,14 +235,19 @@ async function deletePrompt(id) { /* (Unchanged logic) */ if (!confirm("Are you 
 async function saveEditedPrompt(id, liElement) {
     const editTitleInput = liElement.querySelector('.edit-title');
     const editContentInput = liElement.querySelector('.edit-content');
-    // Get selected insert mode from the *edit area* radios
     const editInsertMode = liElement.querySelector(`input[name="edit_insert_mode_${id}"]:checked`)?.value || 'replace';
 
-    const newTitle = editTitleInput.value.trim();
-    const newContent = editContentInput.value.trim();
+    const newTitle = editTitleInput.value.trim(); // Keep trim for title
+    // const newContent = editContentInput.value.trim(); // REMOVED .trim() for content
+    const newContent = editContentInput.value; // Get raw value
 
-    if (!newTitle || !newContent) {
-        alert("Both title and content are required.");
+    // Validation
+    if (!newTitle) {
+        alert("Prompt Title is required.");
+        return;
+    }
+     if (newContent === '') {
+        alert("Prompt Text cannot be completely empty.");
         return;
     }
 
@@ -236,10 +257,9 @@ async function saveEditedPrompt(id, liElement) {
         const promptIndex = prompts.findIndex(p => p.id === id);
 
         if (promptIndex > -1) {
-            prompts[promptIndex].title = newTitle;
-            prompts[promptIndex].content = newContent;
-            prompts[promptIndex].insertMode = editInsertMode; // Save updated mode
-            // enabledSites is handled separately by checkboxes
+            prompts[promptIndex].title = newTitle; // Trimmed title
+            prompts[promptIndex].content = newContent; // Raw content
+            prompts[promptIndex].insertMode = editInsertMode;
             await saveItems(PROMPTS_KEY, prompts);
             displayStatus(statusPromptDiv, "Prompt updated successfully!");
             await loadItems(PROMPTS_KEY, promptList, loadingPromptsLi, renderPrompt); // Refresh list

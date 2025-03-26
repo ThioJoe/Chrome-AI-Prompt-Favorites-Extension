@@ -8,7 +8,9 @@ const CONFIGS_KEY = 'siteConfigs';
 
 // --- Helper Function to Inject Text (Updated for Cursor Position) ---
 // This function will be executed IN THE CONTEXT OF THE WEBPAGE
-function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') { // Added insertMode param
+// --- Helper Function to Inject Text (UPDATED Attempt 2 for Trailing Newlines & Event Order) ---
+// This function will be executed IN THE CONTEXT OF THE WEBPAGE
+function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
     try {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const targetElement = result.singleNodeValue;
@@ -19,68 +21,87 @@ function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') { //
             let currentValue = '';
             let finalValue = '';
             let textLength = 0;
-            const separator = ' '; // Define a separator (e.g., space) for insert modes
 
-            // Get current value based on element type
-            if (targetElement.isContentEditable) {
-                currentValue = targetElement.textContent || '';
-            } else if (targetElement.value !== undefined) {
-                currentValue = targetElement.value || '';
+            // --- Get current value reliably ---
+            // Prefer .value if it exists (common for input/textarea)
+            if (typeof targetElement.value === 'string') {
+                 currentValue = targetElement.value || '';
+            } else if (targetElement.isContentEditable) {
+                 currentValue = targetElement.textContent || '';
             } else {
+                 // Fallback for other elements (less likely for text injection targets)
                  currentValue = targetElement.innerText || '';
             }
 
-            // Determine final value based on insert mode
+            // Determine final value based on insert mode (direct concatenation)
             switch (insertMode) {
                 case 'insertBefore':
-                    // Add separator only if current value isn't empty
-                    finalValue = textToInject + (currentValue ? separator + currentValue : '');
+                    finalValue = textToInject + currentValue;
                     break;
                 case 'insertAfter':
-                     // Add separator only if current value isn't empty
-                    finalValue = (currentValue ? currentValue + separator : '') + textToInject;
+                    finalValue = currentValue + textToInject;
                     break;
                 case 'replace':
-                default: // Default to replace
+                default:
                     finalValue = textToInject;
                     break;
             }
-            textLength = finalValue.length; // Calculate length AFTER combining
+            textLength = finalValue.length;
 
-            // Set the final value
-            if (targetElement.isContentEditable) {
+            // --- Set the final value reliably ---
+            // Prefer setting .value if it exists
+            if (typeof targetElement.value === 'string') {
+                 targetElement.value = finalValue;
+                 // Ensure length is accurate after setting .value
+                 textLength = targetElement.value.length;
+            } else if (targetElement.isContentEditable) {
                 targetElement.textContent = finalValue;
-                // Update length again in case of normalization
+                // Ensure length is accurate after setting .textContent (browser might normalize)
                 textLength = targetElement.textContent.length;
-            } else if (targetElement.value !== undefined) {
-                targetElement.value = finalValue;
-                textLength = targetElement.value.length;
             } else {
+                 // Fallback - might not preserve whitespace well
                  targetElement.innerText = finalValue;
                  textLength = targetElement.innerText.length;
             }
 
-            // Simulate input events
-            targetElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-            targetElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-
-            // Set cursor position to the end of the final text
+            // --- Set cursor position to the end BEFORE dispatching events ---
+            // Move cursor first, then notify frameworks about the final state.
             if (targetElement.setSelectionRange) {
                 try {
+                    // Use textLength calculated *after* setting the value
                     targetElement.setSelectionRange(textLength, textLength);
                 } catch (e) { console.warn("Prompt Favorites: Could not set selection range.", e); }
             } else if (targetElement.isContentEditable) {
                 try {
                     const selection = window.getSelection();
                     const range = document.createRange();
-                    range.selectNodeContents(targetElement);
-                    range.collapse(false); // Collapse to the end
+                    // Make sure element has children before selecting contents, or use endpoint
+                     if (targetElement.firstChild) {
+                         range.selectNodeContents(targetElement);
+                         range.collapse(false); // Collapse to the end
+                     } else {
+                         // If element is empty, just set cursor at the start (which is also the end)
+                         range.setStart(targetElement, 0);
+                         range.collapse(true);
+                     }
                     selection.removeAllRanges();
                     selection.addRange(range);
+                    // Force scroll into view in case element is large
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
                 } catch (e) { console.warn("Prompt Favorites: Could not set cursor in contentEditable.", e); }
             }
 
-            console.log(`Prompt Inserted via context menu (Mode: ${insertMode}, Cursor positioned at end).`);
+            // --- Dispatch input/change events AFTER setting value and cursor ---
+            try {
+                targetElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+                targetElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+            } catch(e) {
+                console.error("Prompt Favorites: Error dispatching events.", e);
+            }
+
+
+            console.log(`Prompt Inserted via context menu (Mode: ${insertMode}, Cursor positioned, Events dispatched).`);
         } else {
             console.error('Prompt Favorites: Target element not found for XPath:', xpath);
         }
