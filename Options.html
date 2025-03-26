@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Prompt Favorites Options</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: auto; background-color: #f4f4f4; }
+        h1, h2 { color: #333; }
+        .prompt-list { list-style: none; padding: 0; }
+        .prompt-item { background-color: #fff; border: 1px solid #ccc; margin-bottom: 10px; padding: 15px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .prompt-item h3 { margin: 0 0 10px 0; font-size: 1.1em; color: #0056b3; }
+        .prompt-item pre { white-space: pre-wrap; word-wrap: break-word; background-color: #eee; padding: 10px; border-radius: 3px; max-height: 200px; overflow-y: auto; font-family: monospace; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], textarea { width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 3px; }
+        textarea { min-height: 100px; font-family: monospace; }
+        button { padding: 10px 15px; margin-right: 5px; border: none; border-radius: 3px; cursor: pointer; }
+        .btn-save { background-color: #28a745; color: white; }
+        .btn-save:hover { background-color: #218838; }
+        .btn-delete { background-color: #dc3545; color: white; }
+        .btn-delete:hover { background-color: #c82333; }
+        .btn-edit { background-color: #ffc107; color: #333; }
+        .btn-edit:hover { background-color: #e0a800; }
+        #add-prompt-form { background-color: #fff; padding: 20px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        #status { margin-top: 15px; color: green; font-weight: bold; }
+        .edit-area { display: none; margin-top: 10px; } /* Initially hide edit fields */
+        .edit-area textarea { min-height: 80px; }
+    </style>
+</head>
+<body>
+    <h1>Prompt Favorites Options</h1>
+
+    <h2>Add New Prompt</h2>
+    <div id="add-prompt-form">
+        <label for="new-prompt-title">Title:</label>
+        <input type="text" id="new-prompt-title" placeholder="e.g., Explain Code Snippet">
+
+        <label for="new-prompt-content">Prompt Text:</label>
+        <textarea id="new-prompt-content" placeholder="Enter the full prompt text here..."></textarea>
+
+        <button id="save-new-prompt" class="btn-save">Save New Prompt</button>
+        <div id="status"></div>
+    </div>
+
+    <h2>Saved Prompts</h2>
+    <ul id="prompt-list" class="prompt-list">
+        <li id="loading-prompts">Loading prompts...</li>
+    </ul>
+
+    <script src="options.js"></script>
+</body>
+</html>

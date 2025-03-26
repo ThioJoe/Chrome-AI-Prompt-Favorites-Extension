@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Prompt Favorites (Context Menu)",
+  "version": "1.1",
+  "description": "Places pre-saved text prompts via the context menu on specific sites.",
+  "permissions": [
+    "contextMenus",   // To add items to the right-click menu
+    "storage",        // To save and retrieve prompts
+    "scripting",      // To inject content into the page
+    "activeTab"       // Often needed with scripting
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*" // Allow scripting/menus on this site
+    // Add other sites here if needed
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html" // Page to manage prompts
+}
