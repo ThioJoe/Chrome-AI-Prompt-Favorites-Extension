@@ -12,6 +12,10 @@ function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
     console.log(`%cPrompt Favorites DEBUG: Entering injectTextIntoElement. Mode: ${insertMode}`, 'color: blue; font-weight: bold;');
     console.log(`Prompt Favorites DEBUG: Raw textToInject: ${JSON.stringify(textToInject)}`);
 
+    // Determine if the input text itself ends with a newline
+    const hasTrailingNewlineInInput = textToInject.endsWith('\n');
+    console.log(`Prompt Favorites DEBUG: Input text ends with newline: ${hasTrailingNewlineInInput}`);
+
     try {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const targetElement = result.singleNodeValue;
@@ -26,12 +30,12 @@ function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
             let textLength = 0; // Based on the text content length after potential modification
 
             // --- Get current value reliably ---
-            // (Keep the same logic as before to get currentValue)
             try {
                 if (typeof targetElement.value === 'string') {
                     currentValue = targetElement.value || '';
                     console.log(`Prompt Favorites DEBUG: Got currentValue from .value: ${JSON.stringify(currentValue)}`);
                 } else if (targetElement.isContentEditable) {
+                    // Getting textContent is usually best for representing raw text
                     currentValue = targetElement.textContent || '';
                     console.log(`Prompt Favorites DEBUG: Got currentValue from .textContent: ${JSON.stringify(currentValue)}`);
                 } else {
@@ -42,7 +46,6 @@ function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
                 console.error("Prompt Favorites DEBUG: Error getting currentValue", e);
                 currentValue = '';
             }
-
 
             // Determine final *string* value based on insert mode
             console.log(`Prompt Favorites DEBUG: Determining finalValue (string). Mode: ${insertMode}`);
@@ -60,150 +63,120 @@ function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
             }
             console.log(`Prompt Favorites DEBUG: Calculated finalValue (string): ${JSON.stringify(finalValue)}`);
 
+            // Determine if the final combined string ends with a newline
+            const finalValueEndsWithNewline = finalValue.endsWith('\n');
+            console.log(`Prompt Favorites DEBUG: Final combined string ends with newline: ${finalValueEndsWithNewline}`);
 
             // --- Set the final value reliably ---
             let valueJustSetText = ''; // Capture textContent after setting
-            let insertedNode = null;   // Keep track of the primary node where content was set/cursor should go
-
             try {
                 if (typeof targetElement.value === 'string') {
-                    // Standard handling for input/textarea
+                    // Use .value for input/textarea - newlines are preserved inherently
                     console.log(`%cPrompt Favorites DEBUG: Setting targetElement.value to: ${JSON.stringify(finalValue)}`, 'color: green;');
                     targetElement.value = finalValue;
                     valueJustSetText = targetElement.value;
-                    textLength = targetElement.value.length;
-                    insertedNode = targetElement; // Cursor goes in the original element
+                    textLength = targetElement.value.length; // Use length of actual value
 
                 } else if (targetElement.isContentEditable) {
-                    // *** MODIFICATION FOR contentEditable ***
+                    // *** MODIFICATION FOR contentEditable using refined <br><br> logic ***
 
-                    // Check for the special case: REPLACE mode ending with \n
-                    const hasTrailingNewline = finalValue.endsWith('\n');
-                    const isReplaceMode = (insertMode === 'replace');
+                    // Assuming plain text input; escape HTML chars in finalValue if it could contain them
+                    // let escapedValue = finalValue.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    let escapedValue = finalValue; // Using raw value for now
 
-                    if (isReplaceMode && hasTrailingNewline && targetElement.tagName === 'P') {
-                        // *** EXPERIMENTAL: Sibling <p><br></p> Logic ***
-                        console.log(`Prompt Favorites DEBUG: Applying experimental sibling <p><br></p> logic.`);
+                    // Basic conversion: all \n become <br>
+                    finalHtml = escapedValue.replace(/\n/g, '<br>');
 
-                        // 1. Prepare content for the *current* paragraph (remove trailing \n, convert others to <br>)
-                        let currentParagraphHtml = finalValue.slice(0, -1).replace(/\n/g, '<br>');
-                        console.log(`Prompt Favorites DEBUG: Setting targetElement.innerHTML to: ${JSON.stringify(currentParagraphHtml)}`);
-                        targetElement.innerHTML = currentParagraphHtml;
-                        valueJustSetText = targetElement.textContent; // textContent of the first paragraph
-                        insertedNode = targetElement; // Initial cursor focus target
-
-                        // 2. Create and insert the new empty paragraph *after* the target element
-                        try {
-                            const newPara = document.createElement('p');
-                            newPara.innerHTML = '<br>';
-                            // Make the new paragraph editable if the original was
-                            if (targetElement.contentEditable === 'true') {
-                                 newPara.contentEditable = 'true';
-                            }
-                            // Add specific classes if needed? e.g., ProseMirror might need specific setup
-                            // newPara.className = 'ProseMirror-trailingBreak'; // Maybe not needed on the P itself
-
-                            console.log(`Prompt Favorites DEBUG: Inserting new sibling <p><br></p>`);
-                            targetElement.parentNode.insertBefore(newPara, targetElement.nextSibling);
-                            insertedNode = newPara; // Focus/cursor should ideally go into the new paragraph
-
-                             // Get length for cursor positioning from the text we actually put in the first paragraph
-                             textLength = valueJustSetText.length;
-
-                        } catch (domError) {
-                            console.error("Prompt Favorites DEBUG: Error creating/inserting sibling paragraph.", domError);
-                            // Fallback to just setting current paragraph content if sibling fails
-                             textLength = valueJustSetText.length;
-                        }
-                        // *** END EXPERIMENTAL LOGIC ***
-
+                    // Apply special trailing <br><br> logic ONLY if the INPUT had a trailing \n
+                    // AND that newline is also the END of the FINAL combined string.
+                    if (hasTrailingNewlineInInput && finalValueEndsWithNewline) {
+                         console.log(`Prompt Favorites DEBUG: Applying special trailing <br><br> logic.`);
+                         // Ensure the finalHtml ends with <br><br>
+                         if (!finalHtml.endsWith('<br><br>')) {
+                              // If it ends with just <br> (most common case for single trailing \n)
+                              if (finalHtml.endsWith('<br>')) {
+                                   finalHtml += '<br>'; // Append the second <br>
+                                   console.log(`Prompt Favorites DEBUG: Appended extra <br> to make trailing <br><br>.`);
+                              } else {
+                                  // If finalValue was just "\n", finalHtml is "<br>". Add another.
+                                  // Or if finalValue ended \n but somehow conversion didn't end <br>? (Unlikely)
+                                  finalHtml += '<br><br>'; // Add <br><br> just in case
+                                  console.log(`Prompt Favorites DEBUG: Appended trailing <br><br> (fallback case).`);
+                              }
+                         } else {
+                              console.log(`Prompt Favorites DEBUG: HTML already ends with <br><br> (no change needed).`);
+                         }
                     } else {
-                        // *** Standard <br> Logic for other modes or no trailing \n ***
-                        console.log(`Prompt Favorites DEBUG: Applying standard <br> conversion logic.`);
-                        // Convert all \n to <br>
-                        finalHtml = finalValue.replace(/\n/g, '<br>');
-
-                        console.log(`%cPrompt Favorites DEBUG: Setting targetElement.innerHTML to: ${JSON.stringify(finalHtml)}`, 'color: purple;');
-                        targetElement.innerHTML = finalHtml;
-
-                        valueJustSetText = targetElement.textContent;
-                        textLength = valueJustSetText.length;
-                        insertedNode = targetElement; // Cursor goes in the original element
-                         // *** END STANDARD <br> LOGIC ***
+                         console.log(`Prompt Favorites DEBUG: Special trailing <br><br> logic not applied (conditions not met).`);
                     }
 
+                    console.log(`%cPrompt Favorites DEBUG: Setting targetElement.innerHTML to: ${JSON.stringify(finalHtml)}`, 'color: purple;');
+                    targetElement.innerHTML = finalHtml;
+
+                    // Read back textContent AFTER setting innerHTML.
+                    valueJustSetText = targetElement.textContent;
+                    // Calculate textLength based on the resulting textContent (won't include <br> effect)
+                    textLength = valueJustSetText.length;
+                    // *** END MODIFICATION ***
+
                 } else {
-                    // Handling for non-editable, non-input elements (if ever needed)
                     console.warn(`Prompt Favorites: Cannot reliably set value for non-input/non-contenteditable element (XPath: ${xpath}). Value not set.`);
-                    return;
+                    return; // Exit if target is not suitable
                 }
 
-                console.log(`%cPrompt Favorites DEBUG: Value read back (textContent of primary element) immediately after setting: ${JSON.stringify(valueJustSetText)}`, 'color: orange;');
-                console.log(`Prompt Favorites DEBUG: Calculated textLength (from primary element's textContent) after setting: ${textLength}`);
+                console.log(`%cPrompt Favorites DEBUG: Value read back (textContent) immediately after setting: ${JSON.stringify(valueJustSetText)}`, 'color: orange;');
+                console.log(`Prompt Favorites DEBUG: Calculated textLength (from textContent) after setting: ${textLength}`);
 
             } catch (e) {
                  console.error("Prompt Favorites DEBUG: Error setting value or reading it back", e);
             }
 
-            // --- Set cursor position ---
-            // Attempt to place cursor at the end of the 'insertedNode'
-            // If a new sibling <p> was created, insertedNode points to that.
-            let cursorTarget = insertedNode || targetElement; // Fallback to original target
-            console.log(`Prompt Favorites DEBUG: Attempting to set cursor in element:`, cursorTarget);
-
+            // --- Set cursor position --- (Using collapse to end logic)
+             console.log(`Prompt Favorites DEBUG: Attempting to set cursor position.`);
+             let cursorTarget = targetElement; // Position cursor within the element we modified
              if (cursorTarget.setSelectionRange && typeof cursorTarget.value === 'string') {
-                // This block likely won't run if insertedNode is the new <p>
                 try {
-                    // Use length calculated from the *first* paragraph's content if sibling was created
+                    // Use textLength from the actual value set
                     cursorTarget.setSelectionRange(textLength, textLength);
                     console.log(`Prompt Favorites DEBUG: Used setSelectionRange(${textLength}, ${textLength})`);
                 } catch (e) { console.warn("Prompt Favorites: Could not set selection range.", e); }
             } else if (cursorTarget.isContentEditable || cursorTarget.contentEditable === 'true') {
-                // Use Selection API - try to place cursor at the start of the new empty paragraph, or end of original
-                 try {
+                try {
                     const selection = window.getSelection();
                     const range = document.createRange();
-
-                    if (insertedNode && insertedNode !== targetElement && insertedNode.tagName === 'P') {
-                        // If a new sibling <p> was created, place cursor at its start
-                        range.setStart(insertedNode, 0); // Should be start of the <br> or the <p> itself
-                        console.log(`Prompt Favorites DEBUG: Setting cursor at start of new sibling paragraph.`);
-                    } else {
-                         // Otherwise, place cursor at the end of the original element's content
-                        range.selectNodeContents(cursorTarget);
-                        range.collapse(false); // Collapse range to the end point
-                        console.log(`Prompt Favorites DEBUG: Setting cursor at end of original contenteditable element.`);
-                    }
-
-                    range.collapse(true); // Collapse to the start/end point defined
+                    // Place cursor at the very end of the element's content
+                    range.selectNodeContents(cursorTarget);
+                    range.collapse(false); // Collapse range to the end point
                     selection.removeAllRanges();
                     selection.addRange(range);
-                    console.log(`Prompt Favorites DEBUG: Used Selection API for contentEditable.`);
-
-                    // Optional: Scroll into view
-                    cursorTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-                } catch (e) { console.warn("Prompt Favorites: Could not set cursor in contentEditable.", e); }
+                    console.log(`Prompt Favorites DEBUG: Used Selection API for contentEditable (collapsed to end) after setting innerHTML.`);
+                     // Optional: Scroll into view
+                     // cursorTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } catch (e) { console.warn("Prompt Favorites: Could not set cursor in contentEditable after innerHTML.", e); }
             }
 
 
             // --- Dispatch input/change events ---
-            // Dispatch on the original target element? Or the new one? Let's try original.
             try {
-                console.log(`Prompt Favorites DEBUG: Dispatching events (input, change) on original target.`);
+                console.log(`Prompt Favorites DEBUG: Dispatching events (input, change) on target element.`);
                 targetElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
                 targetElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-                // Optionally dispatch on new sibling paragraph too? Might confuse editor.
-                // if (insertedNode && insertedNode !== targetElement) {
-                //     insertedNode.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-                // }
             } catch(e) {
                 console.error("Prompt Favorites: Error dispatching events.", e);
             }
 
-            // Final check - Check textContent of original and potentially new element
-            // ... (logging logic would need adjustment here) ...
-
+            // Final check of textContent value after events
+             let valueAfterEventsText = '';
+             try {
+                 if (typeof targetElement.value === 'string') {
+                     valueAfterEventsText = targetElement.value;
+                 } else if (targetElement.isContentEditable) {
+                     valueAfterEventsText = targetElement.textContent;
+                 }
+                 console.log(`Prompt Favorites DEBUG: Value (textContent) after dispatching events: ${JSON.stringify(valueAfterEventsText)}`);
+             } catch (e) {
+                  console.error("Prompt Favorites DEBUG: Error reading value after events", e);
+             }
             console.log(`%cPrompt Favorites: Insertion complete (Mode: ${insertMode}). Final state logged above.`, 'color: blue; font-weight: bold;');
 
         } else {
