@@ -4,7 +4,7 @@
     <title>Prompt Favorites Options</title>
     <meta charset="UTF-8">
     <style>
-        /* (Existing CSS rules) */
+        /* (Existing CSS rules - slightly adjusted) */
         body { font-family: sans-serif; padding: 20px; max-width: 900px; margin: auto; background-color: #f4f4f4; }
         h1, h2, h3 { color: #333; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
@@ -23,10 +23,17 @@
         .list-item { border: 1px solid #ccc; margin-bottom: 10px; padding: 15px; border-radius: 4px; background-color: #fff; }
         .list-item h3 { margin: 0 0 10px 0; font-size: 1.1em; color: #0056b3; }
         .list-item pre, .list-item code { display: block; white-space: pre-wrap; word-wrap: break-word; background-color: #eee; padding: 10px; border-radius: 3px; margin-bottom: 10px; font-family: monospace; font-size: 13px; }
-         .list-item code { color: #c7254e; background-color: #f9f2f4;} /* Style for XPath */
+        .list-item code { color: #c7254e; background-color: #f9f2f4;}
         .edit-area { display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; }
         .edit-area textarea { min-height: 80px; }
         .help-text { font-size: 0.9em; color: #666; margin-top: -5px; margin-bottom: 10px;}
+
+        /* NEW Styles for Enabled Sites Checkboxes */
+        .enabled-sites-list { list-style: none; padding: 10px 0 0 0; margin: 10px 0 0 0; border-top: 1px solid #eee; }
+        .enabled-sites-list label { display: inline-block; margin-right: 15px; font-weight: normal; font-size: 0.95em; cursor: pointer;}
+        .enabled-sites-list input[type="checkbox"] { margin-right: 5px; vertical-align: middle; cursor: pointer; }
+        .enabled-sites-label { font-weight: bold; display: block; margin-bottom: 5px; font-size: 0.9em; color: #555; }
+
     </style>
 </head>
 <body>
@@ -38,17 +45,13 @@
         <div id="add-config-form">
             <label for="new-config-name">Site Name (Optional):</label>
             <input type="text" id="new-config-name" placeholder="e.g., Gemini AI">
-
             <label for="new-config-url">URL Pattern:</label>
             <input type="text" id="new-config-url" placeholder="e.g., https://gemini.google.com/*">
-
             <label for="new-config-xpath">Target Element XPath:</label>
             <input type="text" id="new-config-xpath" placeholder="e.g., /html/body//textarea">
-
             <button id="save-new-config" class="btn-save">Save New Site Config</button>
             <div id="status-config"></div>
         </div>
-
         <h3>Saved Site Configurations</h3>
         <ul id="config-list" class="item-list">
             <li id="loading-configs">Loading configurations...</li>
@@ -60,20 +63,16 @@
          <div id="add-prompt-form">
              <label for="new-prompt-title">Prompt Title:</label>
              <input type="text" id="new-prompt-title" placeholder="e.g., Explain Code Snippet">
-
              <label for="new-prompt-content">Prompt Text:</label>
              <textarea id="new-prompt-content" placeholder="Enter the full prompt text here..."></textarea>
-
              <button id="save-new-prompt" class="btn-save">Save New Prompt</button>
              <div id="status-prompt"></div>
          </div>
-
          <h3>Saved Prompts</h3>
          <ul id="prompt-list" class="item-list">
              <li id="loading-prompts">Loading prompts...</li>
-         </ul>
+             </ul>
     </div>
-
 
     <script src="options.js"></script>
 </body>

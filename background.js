@@ -4,211 +4,175 @@ const PARENT_CONTEXT_MENU_ID = "promptInjectParent";
 const PROMPTS_KEY = 'prompts';
 const CONFIGS_KEY = 'siteConfigs';
 
-// --- Helper Function to Inject Text (Unchanged from your version) ---
-// This function will be executed IN THE CONTEXT OF THE WEBPAGE
+// --- Helper Function to Inject Text (Unchanged) ---
 function injectTextIntoElement(textToInject, xpath) {
-    // (Code for injectTextIntoElement)
     try {
-        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null); //
-        const targetElement = result.singleNodeValue; //
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const targetElement = result.singleNodeValue;
 
-        if (targetElement) { //
-            targetElement.focus(); //
+        if (targetElement) {
+            targetElement.focus();
 
-            // Set value based on element type
-            if (targetElement.isContentEditable) { //
-                 // For contentEditable divs
-                targetElement.textContent = textToInject; //
-            } else if (targetElement.value !== undefined) { //
-                // For input/textarea
-                targetElement.value = textToInject; //
-            } else { //
-                 // Fallback attempt
-                 targetElement.innerText = textToInject; //
+            if (targetElement.isContentEditable) {
+                targetElement.textContent = textToInject;
+            } else if (targetElement.value !== undefined) {
+                targetElement.value = textToInject;
+            } else {
+                 targetElement.innerText = textToInject;
             }
 
+            targetElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+            targetElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 
-            // Simulate input to make web frameworks (React, etc.) recognize the change
-            targetElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true })); //
-            targetElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true })); //
-
-            console.log('Prompt Inserted via context menu.'); //
-        } else { //
-            console.error('Prompt Favorites: Target element not found for XPath:', xpath); //
-            // Optional: Alert the user if the target isn't found
-            // alert('Prompt Favorites: Target text box could not be found on the page.'); //
-        } //
-    } catch (error) { //
-        console.error("Prompt Favorites: Error inserting text:", error); //
-        // alert(`Prompt Favorites Error: ${error.message}`); //
-    } //
+            console.log('Prompt Inserted via context menu.');
+        } else {
+            console.error('Prompt Favorites: Target element not found for XPath:', xpath);
+        }
+    } catch (error) {
+        console.error("Prompt Favorites: Error inserting text:", error);
+    }
 }
 
-// --- Helper to get URL patterns from configs ---
+// --- Helper to get URL patterns from configs (Unchanged) ---
 function getAllUrlPatterns(configs) {
     if (!configs || configs.length === 0) {
-        // Return a pattern that likely matches nothing, preventing menu from appearing everywhere
-        // Or, return a specific known pattern if you have a default site like Gemini
-         // return ["https://gemini.google.com/*"]; // Example fallback
-         return ["<all_urls>"]; // Or allow on all if no configs - choose behavior
+         return ["<all_urls>"]; // Allow on all if no configs - adjust if needed
     }
-    // Extract unique URL patterns
     const patterns = new Set(configs.map(config => config.urlPattern).filter(pattern => pattern));
     return Array.from(patterns);
 }
 
-// --- Simple Wildcard Matching ---
-// Based on chrome match patterns: *, scheme://*, scheme://*/*, scheme://host/*, scheme://*.host/*
+// --- Simple Wildcard Matching (Unchanged) ---
 function matchesUrl(pattern, url) {
     if (!pattern || !url) return false;
     try {
-        // Basic wildcard support: Convert simple wildcard to regex
-        // Escape regex chars, then replace * with .*
         const regexPattern = pattern
-            .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape regex special chars
-            .replace(/\*/g, '.*?'); // Replace * with .*? (non-greedy match)
+            .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*/g, '.*?');
         const regex = new RegExp(`^${regexPattern}$`);
         return regex.test(url);
     } catch (e) {
         console.error(`Invalid pattern for matching: ${pattern}`, e);
-        return false; // Treat invalid patterns as non-matching
+        return false;
     }
 }
 
-// --- Get Config for URL ---
+// --- Get Config for URL (Unchanged) ---
 function getConfigForUrl(configs, url) {
      if (!configs || !url) return null;
-     // Find the first config whose pattern matches the URL
      return configs.find(config => matchesUrl(config.urlPattern, url));
 }
 
-// --- Context Menu Setup ---
+// --- Context Menu Setup (Unchanged Logic, Refreshed on updates) ---
 async function updateContextMenu() {
-    await chrome.contextMenus.removeAll(); //
+    await chrome.contextMenus.removeAll();
 
-    // Fetch both prompts and configs
     const results = await chrome.storage.local.get([PROMPTS_KEY, CONFIGS_KEY]);
-    const prompts = results[PROMPTS_KEY] || []; //
+    const prompts = results[PROMPTS_KEY] || [];
     const configs = results[CONFIGS_KEY] || [];
-
-    // Determine the URL patterns where the menu should appear
     const activeUrlPatterns = getAllUrlPatterns(configs);
 
      if (activeUrlPatterns.length === 0) {
          console.log("No site configurations found. Context menu will not be created.");
-         // Optionally create a disabled menu item directing user to options
           chrome.contextMenus.create({
-            id: "noConfigs",
-            title: "No sites configured (Go to Options)",
-            contexts: ["editable"],
-            enabled: false
+            id: "noConfigs", title: "No sites configured (Go to Options)", contexts: ["editable"], enabled: false
          });
-         return; // Don't create the main menu if no patterns
+         return;
      }
 
      console.log("Updating context menu for URL patterns:", activeUrlPatterns);
 
+    chrome.contextMenus.create({
+        id: PARENT_CONTEXT_MENU_ID, title: "Insert Prompt", contexts: ["editable"], documentUrlPatterns: activeUrlPatterns
+    });
 
-    // Create the parent menu item, targeting configured sites
-    chrome.contextMenus.create({ //
-        id: PARENT_CONTEXT_MENU_ID, //
-        title: "Insert Prompt", //
-        contexts: ["editable"], //
-        documentUrlPatterns: activeUrlPatterns // Use dynamic patterns
-    }); //
-
-    if (prompts.length === 0) { //
-        // Add a placeholder if no prompts are saved
-        chrome.contextMenus.create({ //
-            id: "noPrompts", //
-            parentId: PARENT_CONTEXT_MENU_ID, //
-            title: "No prompts saved (Go to Options)", //
-            contexts: ["editable"], //
-            documentUrlPatterns: activeUrlPatterns, // Match parent patterns
-            enabled: false //
-        }); //
-    } else { //
-        // Create a submenu item for each saved prompt
-        prompts.forEach((prompt, index) => { //
-            const promptId = prompt.id || `prompt-${index}`; //
-            const promptTitle = prompt.title || `Prompt ${index + 1}`; //
-
-            chrome.contextMenus.create({ //
-                id: promptId, //
-                parentId: PARENT_CONTEXT_MENU_ID, //
-                title: promptTitle, //
-                contexts: ["editable"], //
-                documentUrlPatterns: activeUrlPatterns // Match parent patterns
-            }); //
-        }); //
-    } //
-     console.log("Context menu update complete."); //
+    if (prompts.length === 0) {
+        chrome.contextMenus.create({
+            id: "noPrompts", parentId: PARENT_CONTEXT_MENU_ID, title: "No prompts saved (Go to Options)", contexts: ["editable"], documentUrlPatterns: activeUrlPatterns, enabled: false
+        });
+    } else {
+        // Display ALL prompts in the menu initially. Filtering happens on click.
+        prompts.forEach((prompt, index) => {
+            const promptId = prompt.id || `prompt-${index}`;
+            const promptTitle = prompt.title || `Prompt ${index + 1}`;
+            chrome.contextMenus.create({
+                id: promptId, parentId: PARENT_CONTEXT_MENU_ID, title: promptTitle, contexts: ["editable"], documentUrlPatterns: activeUrlPatterns
+            });
+        });
+    }
+     console.log("Context menu update complete.");
 }
 
 // --- Event Listeners ---
 
 chrome.runtime.onInstalled.addListener(reason => {
      console.log("Extension installed or updated:", reason);
-     updateContextMenu(); //
+     updateContextMenu();
 });
 chrome.runtime.onStartup.addListener(() => {
     console.log("Browser startup detected.");
-    updateContextMenu(); //
+    updateContextMenu();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (!tab || !tab.url || !tab.id || info.menuItemId === "noPrompts" || info.menuItemId === "noConfigs" || info.parentMenuItemId !== PARENT_CONTEXT_MENU_ID) { //
-        return; //
+    if (!tab || !tab.url || !tab.id || info.menuItemId === "noPrompts" || info.menuItemId === "noConfigs" || info.parentMenuItemId !== PARENT_CONTEXT_MENU_ID) {
+        return;
     }
 
-    const promptId = info.menuItemId; //
+    const promptId = info.menuItemId;
     const currentUrl = tab.url;
 
-    // Fetch prompts and configs
     const results = await chrome.storage.local.get([PROMPTS_KEY, CONFIGS_KEY]);
-    const prompts = results[PROMPTS_KEY] || []; //
+    const prompts = results[PROMPTS_KEY] || [];
     const configs = results[CONFIGS_KEY] || [];
 
-    // Find the selected prompt
-    const selectedPrompt = prompts.find(p => p.id === promptId); //
-
-    // Find the matching configuration for the current URL
+    const selectedPrompt = prompts.find(p => p.id === promptId);
     const matchingConfig = getConfigForUrl(configs, currentUrl);
 
-    if (!selectedPrompt || !selectedPrompt.content) { //
-         console.error("Could not find prompt content for ID:", promptId); //
-         return; //
-    }
-
-    if (!matchingConfig || !matchingConfig.xpath) {
-         console.warn(`No matching site configuration or XPath found for URL: ${currentUrl}`);
-         // Optionally alert the user
-         // chrome.scripting.executeScript({
-         //    target: { tabId: tab.id },
-         //    func: () => alert(`Prompt Favorites: No XPath configured for this site (${currentUrl}). Please check extension options.`)
-         // });
+    if (!selectedPrompt || !selectedPrompt.content) {
+         console.error("Could not find prompt content for ID:", promptId);
          return;
     }
 
-    console.log(`Injecting prompt "${selectedPrompt.title}" into site ${matchingConfig.name || matchingConfig.urlPattern} using XPath: ${matchingConfig.xpath}`); //
-
-    // Execute the injection function in the target tab using the matched XPath
-    chrome.scripting.executeScript({ //
-        target: { tabId: tab.id, frameIds: [info.frameId || 0] }, //
-        func: injectTextIntoElement, //
-        args: [selectedPrompt.content, matchingConfig.xpath] // Pass content and the DYNAMIC XPath
-    }).catch(err => console.error("Error executing script:", err)); //
-}); //
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Update context menu if options page requests it (prompts or configs changed)
-    if (message.action === "updateContextMenu") { //
-        console.log("Received request to update context menu."); //
-        updateContextMenu(); //
-        sendResponse({ success: true }); //
-        return true; // Indicate async response possible if needed later
+    if (!matchingConfig || !matchingConfig.id || !matchingConfig.xpath) { // Ensure config has ID and xpath
+         console.warn(`No matching site configuration or XPath found for URL: ${currentUrl}`);
+         return;
     }
-    return false; // No async response expected for other messages
+
+    // ***** NEW CHECK: Is this prompt enabled for this site configuration? *****
+    // Default to enabled if the structure doesn't exist (for backward compatibility during transition)
+    const isEnabled = selectedPrompt.enabledSites ? (selectedPrompt.enabledSites[matchingConfig.id] !== false) : true; // Treat undefined or true as enabled
+
+    if (!isEnabled) {
+        console.log(`Prompt "${selectedPrompt.title}" is disabled for site "${matchingConfig.name || matchingConfig.urlPattern}". Injection skipped.`);
+        // Optionally notify user, maybe subtly
+        // chrome.scripting.executeScript({
+        //    target: { tabId: tab.id },
+        //    func: (title) => { console.log(`Prompt Favorites: Prompt "${title}" is disabled for this site.`); },
+        //    args: [selectedPrompt.title]
+        // });
+        return; // Stop processing if not enabled
+    }
+    // ***** END NEW CHECK *****
+
+
+    console.log(`Injecting prompt "${selectedPrompt.title}" into site ${matchingConfig.name || matchingConfig.urlPattern} using XPath: ${matchingConfig.xpath}`);
+
+    chrome.scripting.executeScript({
+        target: { tabId: tab.id, frameIds: [info.frameId || 0] },
+        func: injectTextIntoElement,
+        args: [selectedPrompt.content, matchingConfig.xpath]
+    }).catch(err => console.error("Error executing script:", err));
 });
 
-console.log("Prompt Favorites background script loaded (v1.2 - multi-site)."); //
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === "updateContextMenu") {
+        console.log("Received request to update context menu.");
+        updateContextMenu(); // Refresh menu if prompts or configs change
+        sendResponse({ success: true });
+        return true;
+    }
+    return false;
+});
+
+console.log("Prompt Favorites background script loaded (v1.3 - site enablement).");
