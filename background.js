@@ -8,32 +8,49 @@ const CONFIGS_KEY = 'siteConfigs';
 
 // --- Helper Function to Inject Text (Updated for Cursor Position) ---
 // This function will be executed IN THE CONTEXT OF THE WEBPAGE
-// --- Helper Function to Inject Text (UPDATED Attempt 2 for Trailing Newlines & Event Order) ---
-// This function will be executed IN THE CONTEXT OF THE WEBPAGE
+// Function MODIFIED TO USE innerHTML + <br> for contentEditable
+
 function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
+    console.log(`%cPrompt Favorites DEBUG: Entering injectTextIntoElement. Mode: ${insertMode}`, 'color: blue; font-weight: bold;');
+    console.log(`Prompt Favorites DEBUG: Raw textToInject: ${JSON.stringify(textToInject)}`);
+
     try {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const targetElement = result.singleNodeValue;
 
         if (targetElement) {
-            targetElement.focus(); // Focus the element first
+            console.log(`Prompt Favorites DEBUG: Found targetElement: ${targetElement.tagName}, Type: ${targetElement.type || 'N/A'}, ContentEditable: ${targetElement.isContentEditable}`);
+            targetElement.focus();
 
             let currentValue = '';
-            let finalValue = '';
-            let textLength = 0;
+            let finalValue = ''; // This will store the string value with \n
+            let finalHtml = '';  // This will store the HTML version for contentEditable
+            let textLength = 0; // Based on the text content length after potential modification
 
             // --- Get current value reliably ---
-            // Prefer .value if it exists (common for input/textarea)
-            if (typeof targetElement.value === 'string') {
-                 currentValue = targetElement.value || '';
-            } else if (targetElement.isContentEditable) {
-                 currentValue = targetElement.textContent || '';
-            } else {
-                 // Fallback for other elements (less likely for text injection targets)
-                 currentValue = targetElement.innerText || '';
+            try {
+                if (typeof targetElement.value === 'string') {
+                    // For input/textarea, use value
+                    currentValue = targetElement.value || '';
+                    console.log(`Prompt Favorites DEBUG: Got currentValue from .value: ${JSON.stringify(currentValue)}`);
+                } else if (targetElement.isContentEditable) {
+                    // *** Get HTML for contentEditable if planning to merge ***
+                    // If insertBefore/After needs to merge HTML, getting innerHTML might be better.
+                    // However, reading textContent is safer if the source textToInject is plain text.
+                    // Let's stick to textContent for reading currentValue for simplicity now.
+                    currentValue = targetElement.textContent || '';
+                    console.log(`Prompt Favorites DEBUG: Got currentValue from .textContent: ${JSON.stringify(currentValue)}`);
+                } else {
+                    currentValue = targetElement.textContent || '';
+                    console.log(`Prompt Favorites DEBUG: Got currentValue from fallback .textContent: ${JSON.stringify(currentValue)}`);
+                }
+            } catch (e) {
+                console.error("Prompt Favorites DEBUG: Error getting currentValue", e);
+                currentValue = '';
             }
 
-            // Determine final value based on insert mode (direct concatenation)
+            // Determine final *string* value based on insert mode
+            console.log(`Prompt Favorites DEBUG: Determining finalValue (string). Mode: ${insertMode}`);
             switch (insertMode) {
                 case 'insertBefore':
                     finalValue = textToInject + currentValue;
@@ -46,62 +63,104 @@ function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
                     finalValue = textToInject;
                     break;
             }
-            textLength = finalValue.length;
+            console.log(`Prompt Favorites DEBUG: Calculated finalValue (string): ${JSON.stringify(finalValue)}`);
+            // We'll calculate textLength later after setting the value
 
             // --- Set the final value reliably ---
-            // Prefer setting .value if it exists
-            if (typeof targetElement.value === 'string') {
-                 targetElement.value = finalValue;
-                 // Ensure length is accurate after setting .value
-                 textLength = targetElement.value.length;
-            } else if (targetElement.isContentEditable) {
-                targetElement.textContent = finalValue;
-                // Ensure length is accurate after setting .textContent (browser might normalize)
-                textLength = targetElement.textContent.length;
-            } else {
-                 // Fallback - might not preserve whitespace well
-                 targetElement.innerText = finalValue;
-                 textLength = targetElement.innerText.length;
+            let valueJustSetText = ''; // Capture textContent after setting
+            try {
+                if (typeof targetElement.value === 'string') {
+                    // Use .value for input/textarea
+                    console.log(`%cPrompt Favorites DEBUG: Setting targetElement.value to: ${JSON.stringify(finalValue)}`, 'color: green;');
+                    targetElement.value = finalValue;
+                    valueJustSetText = targetElement.value;
+                    textLength = targetElement.value.length; // Length is straightforward
+
+                } else if (targetElement.isContentEditable) {
+                    // *** MODIFICATION START ***
+                    // For contentEditable, convert finalValue string's \n to <br> and set innerHTML
+                    // Replace all occurrences of \n with <br> for HTML rendering
+                    // NOTE: This assumes 'finalValue' doesn't contain other HTML that needs escaping.
+                    // If textToInject or currentValue could contain '<', '>', '&', they should be escaped first
+                    // before converting \n to <br>. For simplicity, we omit escaping here.
+                    finalHtml = finalValue.replace(/\n/g, '<br>');
+
+                    console.log(`%cPrompt Favorites DEBUG: Setting targetElement.innerHTML to: ${JSON.stringify(finalHtml)}`, 'color: purple;');
+                    targetElement.innerHTML = finalHtml;
+
+                    // Read back textContent AFTER setting innerHTML.
+                    // NOTE: <br> tags are NOT included in textContent.
+                    valueJustSetText = targetElement.textContent;
+                    // Calculate textLength based on the resulting textContent.
+                    // Cursor positioning might be tricky; this length won't account for <br>.
+                    textLength = valueJustSetText.length;
+                     // *** MODIFICATION END ***
+
+                } else {
+                    console.warn(`Prompt Favorites: Cannot reliably set value for non-input/non-contenteditable element (XPath: ${xpath}). Value not set.`);
+                    return;
+                }
+
+                console.log(`%cPrompt Favorites DEBUG: Value read back (textContent) immediately after setting: ${JSON.stringify(valueJustSetText)}`, 'color: orange;');
+                console.log(`Prompt Favorites DEBUG: Calculated textLength (from textContent) after setting: ${textLength}`);
+
+            } catch (e) {
+                 console.error("Prompt Favorites DEBUG: Error setting value or reading it back", e);
             }
 
-            // --- Set cursor position to the end BEFORE dispatching events ---
-            // Move cursor first, then notify frameworks about the final state.
-            if (targetElement.setSelectionRange) {
+            // --- Set cursor position ---
+            // Cursor positioning after setting innerHTML needs careful handling.
+            // Placing it based on 'textLength' from textContent might be inaccurate if <br> tags exist.
+            // A common approach is to place it at the very end of the contentEditable element.
+            console.log(`Prompt Favorites DEBUG: Attempting to set cursor position.`);
+             if (targetElement.setSelectionRange && typeof targetElement.value === 'string') {
                 try {
-                    // Use textLength calculated *after* setting the value
                     targetElement.setSelectionRange(textLength, textLength);
+                    console.log(`Prompt Favorites DEBUG: Used setSelectionRange(${textLength}, ${textLength})`);
                 } catch (e) { console.warn("Prompt Favorites: Could not set selection range.", e); }
             } else if (targetElement.isContentEditable) {
                 try {
                     const selection = window.getSelection();
                     const range = document.createRange();
-                    // Make sure element has children before selecting contents, or use endpoint
-                     if (targetElement.firstChild) {
-                         range.selectNodeContents(targetElement);
-                         range.collapse(false); // Collapse to the end
-                     } else {
-                         // If element is empty, just set cursor at the start (which is also the end)
-                         range.setStart(targetElement, 0);
-                         range.collapse(true);
-                     }
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-                    // Force scroll into view in case element is large
-                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-                } catch (e) { console.warn("Prompt Favorites: Could not set cursor in contentEditable.", e); }
+                    // Place cursor at the very end of the element's content
+                    range.selectNodeContents(targetElement); // Select all content
+                    range.collapse(false); // Collapse range to the end point
+
+                    selection.removeAllRanges(); // Clear existing selection
+                    selection.addRange(range); // Add the new collapsed range
+                    console.log(`Prompt Favorites DEBUG: Used Selection API for contentEditable (collapsed to end) after setting innerHTML.`);
+
+                    // Optional: Scroll into view
+                    // targetElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+                } catch (e) { console.warn("Prompt Favorites: Could not set cursor in contentEditable after innerHTML.", e); }
             }
 
-            // --- Dispatch input/change events AFTER setting value and cursor ---
+            // --- Dispatch input/change events ---
+            // Triggering events might be necessary for frameworks/listeners reacting to changes.
             try {
+                console.log(`Prompt Favorites DEBUG: Dispatching events (input, change).`);
                 targetElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
                 targetElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
             } catch(e) {
                 console.error("Prompt Favorites: Error dispatching events.", e);
             }
 
+            // Final check of textContent value after events
+             let valueAfterEventsText = '';
+             try {
+                 if (typeof targetElement.value === 'string') {
+                     valueAfterEventsText = targetElement.value;
+                 } else if (targetElement.isContentEditable) {
+                     valueAfterEventsText = targetElement.textContent;
+                 }
+                 console.log(`Prompt Favorites DEBUG: Value (textContent) after dispatching events: ${JSON.stringify(valueAfterEventsText)}`);
+             } catch (e) {
+                  console.error("Prompt Favorites DEBUG: Error reading value after events", e);
+             }
+            console.log(`%cPrompt Favorites: Insertion complete (Mode: ${insertMode}). Final state logged above.`, 'color: blue; font-weight: bold;');
 
-            console.log(`Prompt Inserted via context menu (Mode: ${insertMode}, Cursor positioned, Events dispatched).`);
         } else {
             console.error('Prompt Favorites: Target element not found for XPath:', xpath);
         }
