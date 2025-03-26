@@ -4,7 +4,7 @@
     <title>Prompt Favorites Options</title>
     <meta charset="UTF-8">
     <style>
-        /* (Existing CSS rules - slightly adjusted) */
+        /* (Existing CSS rules - No changes needed here) */
         body { font-family: sans-serif; padding: 20px; max-width: 900px; margin: auto; background-color: #f4f4f4; }
         h1, h2, h3 { color: #333; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
@@ -36,11 +36,29 @@
         .enabled-sites-list label { display: inline-block; margin-right: 15px; font-weight: normal; font-size: 0.95em; cursor: pointer;}
         .enabled-sites-list input[type="checkbox"] { margin-right: 5px; vertical-align: middle; cursor: pointer; }
         .enabled-sites-label { font-weight: bold; display: block; margin-bottom: 5px; font-size: 0.9em; color: #555; }
-        .import-export-controls { display: flex; align-items: center; gap: 15px; flex-wrap: wrap;} /* Align import/export items */
+        .import-export-controls { display: flex; align-items: center; gap: 15px; flex-wrap: wrap;}
     </style>
 </head>
 <body>
     <h1>Prompt Favorites Options</h1>
+
+    <div id="prompts-section" class="section">
+         <h2>Prompts</h2>
+         <div id="add-prompt-form">
+             <label for="new-prompt-title">Prompt Title:</label>
+             <input type="text" id="new-prompt-title" placeholder="e.g., Explain Code Snippet">
+
+             <label for="new-prompt-content">Prompt Text:</label>
+             <textarea id="new-prompt-content" placeholder="Enter the full prompt text here..."></textarea>
+
+             <button id="save-new-prompt" class="btn-save">Save New Prompt</button>
+             <div id="status-prompt"></div>
+         </div>
+         <h3>Saved Prompts</h3>
+         <ul id="prompt-list" class="item-list">
+             <li id="loading-prompts">Loading prompts...</li>
+         </ul>
+    </div>
 
     <div id="site-configs-section" class="section">
         <h2>Site Configurations</h2>
@@ -59,22 +77,6 @@
         <ul id="config-list" class="item-list">
             <li id="loading-configs">Loading configurations...</li>
         </ul>
-    </div>
-
-    <div id="prompts-section" class="section">
-         <h2>Prompts</h2>
-         <div id="add-prompt-form">
-             <label for="new-prompt-title">Prompt Title:</label>
-             <input type="text" id="new-prompt-title" placeholder="e.g., Explain Code Snippet">
-             <label for="new-prompt-content">Prompt Text:</label>
-             <textarea id="new-prompt-content" placeholder="Enter the full prompt text here..."></textarea>
-             <button id="save-new-prompt" class="btn-save">Save New Prompt</button>
-             <div id="status-prompt"></div>
-         </div>
-         <h3>Saved Prompts</h3>
-         <ul id="prompt-list" class="item-list">
-             <li id="loading-prompts">Loading prompts...</li>
-         </ul>
     </div>
 
     <div id="io-section" class="section">
