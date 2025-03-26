@@ -8,7 +8,7 @@ const CONFIGS_KEY = 'siteConfigs';
 
 // --- Helper Function to Inject Text (Updated for Cursor Position) ---
 // This function will be executed IN THE CONTEXT OF THE WEBPAGE
-function injectTextIntoElement(textToInject, xpath) {
+function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') { // Added insertMode param
     try {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const targetElement = result.singleNodeValue;
@@ -16,63 +16,71 @@ function injectTextIntoElement(textToInject, xpath) {
         if (targetElement) {
             targetElement.focus(); // Focus the element first
 
-            let textLength = textToInject.length;
+            let currentValue = '';
+            let finalValue = '';
+            let textLength = 0;
+            const separator = ' '; // Define a separator (e.g., space) for insert modes
 
-            // Set value based on element type
+            // Get current value based on element type
             if (targetElement.isContentEditable) {
-                 // For contentEditable divs
-                targetElement.textContent = textToInject;
-                // Content length might differ slightly if browser normalizes whitespace,
-                // but using original length is usually sufficient for cursor placement.
-                // More robust: Recalculate based on targetElement.textContent.length if needed.
-                textLength = targetElement.textContent.length;
-
+                currentValue = targetElement.textContent || '';
             } else if (targetElement.value !== undefined) {
-                // For input/textarea
-                targetElement.value = textToInject;
-                textLength = targetElement.value.length; // Use actual length after setting
+                currentValue = targetElement.value || '';
             } else {
-                 // Fallback attempt
-                 targetElement.innerText = textToInject;
+                 currentValue = targetElement.innerText || '';
+            }
+
+            // Determine final value based on insert mode
+            switch (insertMode) {
+                case 'insertBefore':
+                    // Add separator only if current value isn't empty
+                    finalValue = textToInject + (currentValue ? separator + currentValue : '');
+                    break;
+                case 'insertAfter':
+                     // Add separator only if current value isn't empty
+                    finalValue = (currentValue ? currentValue + separator : '') + textToInject;
+                    break;
+                case 'replace':
+                default: // Default to replace
+                    finalValue = textToInject;
+                    break;
+            }
+            textLength = finalValue.length; // Calculate length AFTER combining
+
+            // Set the final value
+            if (targetElement.isContentEditable) {
+                targetElement.textContent = finalValue;
+                // Update length again in case of normalization
+                textLength = targetElement.textContent.length;
+            } else if (targetElement.value !== undefined) {
+                targetElement.value = finalValue;
+                textLength = targetElement.value.length;
+            } else {
+                 targetElement.innerText = finalValue;
                  textLength = targetElement.innerText.length;
             }
 
-
-            // Simulate input to make web frameworks (React, etc.) recognize the change
-            // Dispatch *before* setting cursor, as some frameworks might react to input
-            // and potentially interfere with cursor setting otherwise.
+            // Simulate input events
             targetElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
             targetElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 
-            // Set cursor position to the end ---
+            // Set cursor position to the end of the final text
             if (targetElement.setSelectionRange) {
-                // For <input> and <textarea>
                 try {
                     targetElement.setSelectionRange(textLength, textLength);
-                } catch (e) {
-                    console.warn("Prompt Favorites: Could not set selection range (common in non-text inputs).", e);
-                }
+                } catch (e) { console.warn("Prompt Favorites: Could not set selection range.", e); }
             } else if (targetElement.isContentEditable) {
-                // For contentEditable elements
                 try {
                     const selection = window.getSelection();
                     const range = document.createRange();
-                    // Select all content within the element
                     range.selectNodeContents(targetElement);
-                    // Collapse the range to the end point. false means collapse to end.
-                    range.collapse(false);
-                    // Remove any existing selections
+                    range.collapse(false); // Collapse to the end
                     selection.removeAllRanges();
-                    // Add the new collapsed range, placing the cursor at the end
                     selection.addRange(range);
-                } catch (e) {
-                     console.warn("Prompt Favorites: Could not set cursor in contentEditable element.", e);
-                }
+                } catch (e) { console.warn("Prompt Favorites: Could not set cursor in contentEditable.", e); }
             }
-            // --- End NEW ---
 
-
-            console.log('Prompt Inserted via context menu (Cursor positioned at end).');
+            console.log(`Prompt Inserted via context menu (Mode: ${insertMode}, Cursor positioned at end).`);
         } else {
             console.error('Prompt Favorites: Target element not found for XPath:', xpath);
         }
@@ -225,7 +233,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 
-// Listener for clicks on our context menu items (Unchanged logic for injection)
+// Listener for clicks on our context menu items
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Basic validation and ignore placeholders
     if (!tab || !tab.id || !tab.url || info.menuItemId === NO_PROMPTS_MENU_ID || info.menuItemId === NO_CONFIG_MENU_ID || info.parentMenuItemId !== PARENT_CONTEXT_MENU_ID) {
@@ -242,25 +250,29 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const selectedPrompt = prompts.find(p => p.id === promptId);
     const matchingConfig = getConfigForUrl(configs, currentUrl);
 
-    // Checks (already implicitly handled by menu filtering, but good as safeguard)
+    // Validation
     if (!selectedPrompt || !selectedPrompt.content) {
          console.error("Clicked prompt data not found:", promptId); return;
     }
     if (!matchingConfig || !matchingConfig.xpath) {
          console.error(`Clicked context menu but matching config/xpath not found for URL: ${currentUrl}`); return;
     }
-    // Enabled check is technically redundant now if menu is built correctly, but harmless
+
+    // Check if enabled (safeguard)
     const isEnabled = selectedPrompt.enabledSites ? (selectedPrompt.enabledSites[matchingConfig.id] !== false) : true;
     if (!isEnabled) {
          console.warn(`Clicked disabled prompt "${selectedPrompt.title}" for site "${matchingConfig.name}". Should not have been visible.`); return;
     }
 
-    // Proceed with injection
-    console.log(`Injecting prompt "${selectedPrompt.title}" into site ${matchingConfig.name || matchingConfig.urlPattern} using XPath: ${matchingConfig.xpath}`);
+    // Get the insertion mode for this prompt (default to 'replace')
+    const insertMode = selectedPrompt.insertMode || 'replace'; // << NEW
+
+    // Proceed with injection, passing the insertMode
+    console.log(`Injecting prompt "${selectedPrompt.title}" into site ${matchingConfig.name || matchingConfig.urlPattern} using XPath: ${matchingConfig.xpath} with mode: ${insertMode}`);
     chrome.scripting.executeScript({
         target: { tabId: tab.id, frameIds: [info.frameId || 0] },
         func: injectTextIntoElement,
-        args: [selectedPrompt.content, matchingConfig.xpath]
+        args: [selectedPrompt.content, matchingConfig.xpath, insertMode] // << Pass insertMode
     }).catch(err => console.error("Error executing script:", err));
 });
 

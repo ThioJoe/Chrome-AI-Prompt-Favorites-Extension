@@ -4,7 +4,7 @@
     <title>Prompt Favorites Options</title>
     <meta charset="UTF-8">
     <style>
-        /* (Existing CSS rules - No changes needed here) */
+        /* (Existing CSS rules - slightly adjusted for radio buttons) */
         body { font-family: sans-serif; padding: 20px; max-width: 900px; margin: auto; background-color: #f4f4f4; }
         h1, h2, h3 { color: #333; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
@@ -37,6 +37,11 @@
         .enabled-sites-list input[type="checkbox"] { margin-right: 5px; vertical-align: middle; cursor: pointer; }
         .enabled-sites-label { font-weight: bold; display: block; margin-bottom: 5px; font-size: 0.9em; color: #555; }
         .import-export-controls { display: flex; align-items: center; gap: 15px; flex-wrap: wrap;}
+        /* NEW Styles for Insertion Mode */
+        .insert-mode-options { margin: 10px 0; padding-bottom: 10px; border-bottom: 1px solid #eee;}
+        .insert-mode-options label { display: inline-block; margin-right: 15px; font-weight: normal; font-size: 0.95em; cursor: pointer; }
+        .insert-mode-options input[type="radio"] { margin-right: 4px; vertical-align: middle; cursor: pointer; }
+        .insert-mode-label { font-weight: bold; display: block; margin-bottom: 5px; font-size: 0.9em; color: #555;}
     </style>
 </head>
 <body>
@@ -51,13 +56,20 @@
              <label for="new-prompt-content">Prompt Text:</label>
              <textarea id="new-prompt-content" placeholder="Enter the full prompt text here..."></textarea>
 
+             <div class="insert-mode-options">
+                 <span class="insert-mode-label">Insertion Mode:</span>
+                 <label><input type="radio" name="new_insert_mode" value="replace" checked> Replace</label>
+                 <label><input type="radio" name="new_insert_mode" value="insertBefore"> Insert Before</label>
+                 <label><input type="radio" name="new_insert_mode" value="insertAfter"> Insert After</label>
+             </div>
              <button id="save-new-prompt" class="btn-save">Save New Prompt</button>
              <div id="status-prompt"></div>
          </div>
+
          <h3>Saved Prompts</h3>
          <ul id="prompt-list" class="item-list">
              <li id="loading-prompts">Loading prompts...</li>
-         </ul>
+             </ul>
     </div>
 
     <div id="site-configs-section" class="section">
@@ -96,7 +108,6 @@
         </div>
         <div id="status-io"></div>
     </div>
-
 
     <script src="options.js"></script>
 </body>
