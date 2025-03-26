@@ -4,47 +4,76 @@
     <title>Prompt Favorites Options</title>
     <meta charset="UTF-8">
     <style>
-        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: auto; background-color: #f4f4f4; }
-        h1, h2 { color: #333; }
-        .prompt-list { list-style: none; padding: 0; }
-        .prompt-item { background-color: #fff; border: 1px solid #ccc; margin-bottom: 10px; padding: 15px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .prompt-item h3 { margin: 0 0 10px 0; font-size: 1.1em; color: #0056b3; }
-        .prompt-item pre { white-space: pre-wrap; word-wrap: break-word; background-color: #eee; padding: 10px; border-radius: 3px; max-height: 200px; overflow-y: auto; font-family: monospace; }
+        /* (Existing CSS rules) */
+        body { font-family: sans-serif; padding: 20px; max-width: 900px; margin: auto; background-color: #f4f4f4; }
+        h1, h2, h3 { color: #333; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="text"], textarea { width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 3px; }
+        input[type="text"], textarea { width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 3px; font-size: 14px; }
         textarea { min-height: 100px; font-family: monospace; }
-        button { padding: 10px 15px; margin-right: 5px; border: none; border-radius: 3px; cursor: pointer; }
+        button { padding: 10px 15px; margin-right: 5px; border: none; border-radius: 3px; cursor: pointer; font-size: 14px; }
         .btn-save { background-color: #28a745; color: white; }
         .btn-save:hover { background-color: #218838; }
         .btn-delete { background-color: #dc3545; color: white; }
         .btn-delete:hover { background-color: #c82333; }
         .btn-edit { background-color: #ffc107; color: #333; }
         .btn-edit:hover { background-color: #e0a800; }
-        #add-prompt-form { background-color: #fff; padding: 20px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        #status { margin-top: 15px; color: green; font-weight: bold; }
-        .edit-area { display: none; margin-top: 10px; } /* Initially hide edit fields */
+        .section { background-color: #fff; padding: 20px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 30px; }
+        #status-prompt, #status-config { margin-top: 15px; color: green; font-weight: bold; min-height: 1.2em; }
+        .item-list { list-style: none; padding: 0; }
+        .list-item { border: 1px solid #ccc; margin-bottom: 10px; padding: 15px; border-radius: 4px; background-color: #fff; }
+        .list-item h3 { margin: 0 0 10px 0; font-size: 1.1em; color: #0056b3; }
+        .list-item pre, .list-item code { display: block; white-space: pre-wrap; word-wrap: break-word; background-color: #eee; padding: 10px; border-radius: 3px; margin-bottom: 10px; font-family: monospace; font-size: 13px; }
+         .list-item code { color: #c7254e; background-color: #f9f2f4;} /* Style for XPath */
+        .edit-area { display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; }
         .edit-area textarea { min-height: 80px; }
+        .help-text { font-size: 0.9em; color: #666; margin-top: -5px; margin-bottom: 10px;}
     </style>
 </head>
 <body>
     <h1>Prompt Favorites Options</h1>
 
-    <h2>Add New Prompt</h2>
-    <div id="add-prompt-form">
-        <label for="new-prompt-title">Title:</label>
-        <input type="text" id="new-prompt-title" placeholder="e.g., Explain Code Snippet">
+    <div id="site-configs-section" class="section">
+        <h2>Site Configurations</h2>
+        <p class="help-text">Define where and how prompts should be injected. Use Chrome Match Patterns for URLs (e.g., `https://*.example.com/*` or `https://specific.page.com/path`).</p>
+        <div id="add-config-form">
+            <label for="new-config-name">Site Name (Optional):</label>
+            <input type="text" id="new-config-name" placeholder="e.g., Gemini AI">
 
-        <label for="new-prompt-content">Prompt Text:</label>
-        <textarea id="new-prompt-content" placeholder="Enter the full prompt text here..."></textarea>
+            <label for="new-config-url">URL Pattern:</label>
+            <input type="text" id="new-config-url" placeholder="e.g., https://gemini.google.com/*">
 
-        <button id="save-new-prompt" class="btn-save">Save New Prompt</button>
-        <div id="status"></div>
+            <label for="new-config-xpath">Target Element XPath:</label>
+            <input type="text" id="new-config-xpath" placeholder="e.g., /html/body//textarea">
+
+            <button id="save-new-config" class="btn-save">Save New Site Config</button>
+            <div id="status-config"></div>
+        </div>
+
+        <h3>Saved Site Configurations</h3>
+        <ul id="config-list" class="item-list">
+            <li id="loading-configs">Loading configurations...</li>
+        </ul>
     </div>
 
-    <h2>Saved Prompts</h2>
-    <ul id="prompt-list" class="prompt-list">
-        <li id="loading-prompts">Loading prompts...</li>
-    </ul>
+    <div id="prompts-section" class="section">
+         <h2>Prompts</h2>
+         <div id="add-prompt-form">
+             <label for="new-prompt-title">Prompt Title:</label>
+             <input type="text" id="new-prompt-title" placeholder="e.g., Explain Code Snippet">
+
+             <label for="new-prompt-content">Prompt Text:</label>
+             <textarea id="new-prompt-content" placeholder="Enter the full prompt text here..."></textarea>
+
+             <button id="save-new-prompt" class="btn-save">Save New Prompt</button>
+             <div id="status-prompt"></div>
+         </div>
+
+         <h3>Saved Prompts</h3>
+         <ul id="prompt-list" class="item-list">
+             <li id="loading-prompts">Loading prompts...</li>
+         </ul>
+    </div>
+
 
     <script src="options.js"></script>
 </body>
