@@ -40,7 +40,7 @@ function debugLog(message, level = 'log', style = '') {
 
 // --- Helper Function to Inject Text (Updated for Cursor Position) ---
 // This function will be executed IN THE CONTEXT OF THE WEBPAGE
-function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
+function injectTextIntoElement(textToInject, xpath, insertMode = 'replace', currentUrl = '') { // Added currentUrl parameter
     // --- Debug Logging Helper (needs to be redefined within page context) ---
     const DEBUGMODE_INJECT = false; // Set this based on how you pass debug state if needed, or hardcode
     function debugLogInjected(message, level = 'log', style = '') {
@@ -55,11 +55,8 @@ function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
     }
     // --- End Debug Helper Redefinition ---
 
-    debugLogInjected(`Entering injectTextIntoElement. Mode: ${insertMode}`, 'log', 'color: blue; font-weight: bold;');
+    debugLogInjected(`Entering injectTextIntoElement. Mode: ${insertMode}, URL: ${currentUrl}`, 'log', 'color: blue; font-weight: bold;');
     debugLogInjected(`Raw textToInject: ${JSON.stringify(textToInject)}`);
-
-    const hasTrailingNewlineInInput = textToInject.endsWith('\n');
-    debugLogInjected(`Input text ends with newline: ${hasTrailingNewlineInInput}`);
 
     try {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
@@ -67,146 +64,167 @@ function injectTextIntoElement(textToInject, xpath, insertMode = 'replace') {
 
         if (targetElement) {
             debugLogInjected(`Found targetElement: ${targetElement.tagName}, Type: ${targetElement.type || 'N/A'}, ContentEditable: ${targetElement.isContentEditable}`);
-            targetElement.focus();
+            targetElement.focus(); // Focus the original target first
 
             let currentValue = '';
-            let finalValue = ''; // This will store the string value with \n
-            let finalHtml = '';  // This will store the HTML version for contentEditable
-            let textLength = 0; // Based on the text content length after potential modification
+            let finalValue = '';
+            let finalHtml = '';
+            let textLength = 0;
+            let elementToModify = targetElement; // This will be the element whose innerHTML is set
+            let elementForEventsAndCursor = targetElement; // This will be the element for events/cursor logic
 
             // --- Get current value reliably ---
             try {
                 if (typeof targetElement.value === 'string') {
                     currentValue = targetElement.value || '';
-                    debugLogInjected(`Got currentValue from .value: ${JSON.stringify(currentValue)}`);
                 } else if (targetElement.isContentEditable) {
-                    currentValue = targetElement.textContent || '';
-                    debugLogInjected(`Got currentValue from .textContent: ${JSON.stringify(currentValue)}`);
+                    if (insertMode === 'replace') {
+                        currentValue = targetElement.innerHTML || '';
+                    } else {
+                        currentValue = targetElement.textContent || '';
+                    }
                 } else {
                     currentValue = targetElement.textContent || '';
-                    debugLogInjected(`Got currentValue from fallback .textContent: ${JSON.stringify(currentValue)}`);
                 }
             } catch (e) {
-                debugLogInjected("Error getting currentValue", 'error'); console.error(e); // Keep original console.error for the actual error object
+                debugLogInjected("Error getting currentValue", 'error'); console.error(e);
                 currentValue = '';
             }
 
             // Determine final *string* value based on insert mode
-            debugLogInjected(`Determining finalValue (string). Mode: ${insertMode}`);
             switch (insertMode) {
-                case 'insertBefore':
-                    finalValue = textToInject + currentValue;
-                    break;
-                case 'insertAfter':
-                    finalValue = currentValue + textToInject;
-                    break;
-                case 'replace':
-                default:
-                    finalValue = textToInject;
-                    break;
+                case 'insertBefore': finalValue = textToInject + currentValue; break;
+                case 'insertAfter': finalValue = currentValue + textToInject; break;
+                case 'replace': default: finalValue = textToInject; break;
             }
             debugLogInjected(`Calculated finalValue (string): ${JSON.stringify(finalValue)}`);
 
-            const finalValueEndsWithNewline = finalValue.endsWith('\n');
-            debugLogInjected(`Final combined string ends with newline: ${finalValueEndsWithNewline}`);
-
             // --- Set the final value reliably ---
-            let valueJustSetText = ''; // Capture textContent after setting
+            let valueJustSetText = '';
             try {
-                if (typeof targetElement.value === 'string') {
-                    debugLogInjected(`%cSetting targetElement.value to: ${JSON.stringify(finalValue)}`, 'log', 'color: green;');
+                if (typeof targetElement.value === 'string' && !targetElement.isContentEditable) { // Standard input/textarea
                     targetElement.value = finalValue;
                     valueJustSetText = targetElement.value;
                     textLength = targetElement.value.length;
-
                 } else if (targetElement.isContentEditable) {
-                    let escapedValue = finalValue;
-                    finalHtml = escapedValue.replace(/\n/g, '<br>');
+                    const isGemini = currentUrl.includes('gemini.google.com');
+                    debugLogInjected(`Is Gemini site: ${isGemini}`);
 
-                    if (hasTrailingNewlineInInput && finalValueEndsWithNewline) {
-                        debugLogInjected(`Applying special trailing <br><br> logic.`);
-                        if (!finalHtml.endsWith('<br><br>')) {
-                            if (finalHtml.endsWith('<br>')) {
-                                finalHtml += '<br>';
-                                debugLogInjected(`Appended extra <br> to make trailing <br><br>.`);
-                            } else {
-                                finalHtml += '<br><br>';
-                                debugLogInjected(`Appended trailing <br><br> (fallback case).`);
+                    if (isGemini) {
+                        const lines = finalValue.split('\n');
+                        let htmlContent = '';
+                        for (let i = 0; i < lines.length; i++) {
+                            const line = lines[i];
+                            // Ensure blank lines become <p><br></p> and non-empty lines <p>text</p>
+                            if (line === '' && (i < lines.length -1 || lines.length === 1) ) { // Handle single blank line or blank lines between text
+                                htmlContent += '<p><br></p>';
+                            } else if (line !== '') {
+                                htmlContent += `<p>${line.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
+                            } else if (line === '' && i === lines.length -1 && lines.length > 1 && !finalValue.endsWith('\n\n')) {
+                                // if the very last character was a single \n that resulted in a trailing empty string from split,
+                                // and it wasn't meant to be a paragraph break, don't add <p><br></p>
+                                // This case means finalValue was "text\n", not "text\n\n"
                             }
-                        } else {
-                             debugLogInjected(`HTML already ends with <br><br> (no change needed).`);
                         }
-                    } else {
-                         debugLogInjected(`Special trailing <br><br> logic not applied (conditions not met).`);
+                        finalHtml = htmlContent;
+
+                        if (targetElement.tagName === 'P' &&
+                            targetElement.parentElement &&
+                            targetElement.parentElement.classList.contains('ql-editor')) {
+                            debugLogInjected('%cGemini: Target is P in ql-editor. Setting innerHTML of parent.', 'log', 'color: magenta;');
+                            elementToModify = targetElement.parentElement;
+                            elementForEventsAndCursor = targetElement.parentElement;
+                        } else {
+                             debugLogInjected('%cGemini: Target is ql-editor or other. Setting innerHTML of target.', 'log', 'color: magenta;');
+                            // elementToModify and elementForEventsAndCursor remain targetElement
+                        }
+                        elementToModify.innerHTML = finalHtml;
+                        debugLogInjected(`%cSet Gemini HTML: ${JSON.stringify(finalHtml)} to ${elementToModify.tagName}`, 'log', 'color: purple;');
+                    } else { // Non-Gemini contentEditable
+                        let escapedValue = finalValue;
+                        finalHtml = escapedValue.replace(/\n/g, '<br>');
+                        const _hasTrailingNewline = finalValue.endsWith('\n');
+                        if (_hasTrailingNewline && finalValue !== '') {
+                            if (finalHtml.endsWith('<br><br>')) { /* already good */ }
+                            else if (finalHtml.endsWith('<br>')) { finalHtml += '<br>'; }
+                            else { finalHtml += '<br><br>';}
+                        }
+                        targetElement.innerHTML = finalHtml; // elementToModify and elementForEventsAndCursor are targetElement
+                        debugLogInjected(`%cSet non-Gemini contentEditable HTML: ${JSON.stringify(finalHtml)}`, 'log', 'color: purple;');
                     }
-
-                    debugLogInjected(`%cSetting targetElement.innerHTML to: ${JSON.stringify(finalHtml)}`, 'log', 'color: purple;');
-                    targetElement.innerHTML = finalHtml;
-
-                    valueJustSetText = targetElement.textContent;
-                    textLength = valueJustSetText.length;
-
+                    valueJustSetText = elementForEventsAndCursor.textContent || "";
+                    textLength = valueJustSetText.length; // Note: for rich text, textContent length can differ from perceived chars
                 } else {
-                    debugLogInjected(`Cannot reliably set value for non-input/non-contenteditable element (XPath: ${xpath}). Value not set.`, 'warn');
-                    return; // Exit if target is not suitable
+                    debugLogInjected(`Cannot reliably set value for this element type (XPath: ${xpath}). Value not set.`, 'warn');
+                    return;
                 }
-
-                 debugLogInjected(`%cValue read back (textContent) immediately after setting: ${JSON.stringify(valueJustSetText)}`, 'log', 'color: orange;');
-                 debugLogInjected(`Calculated textLength (from textContent) after setting: ${textLength}`);
-
+                debugLogInjected(`%cValue read back (textContent of ${elementForEventsAndCursor.tagName}) after setting: ${JSON.stringify(valueJustSetText)}`, 'log', 'color: orange;');
             } catch (e) {
-                debugLogInjected("Error setting value or reading it back", 'error'); console.error(e); // Keep original console.error
+                debugLogInjected("Error setting value or reading it back", 'error'); console.error(e);
             }
 
-            // --- Set cursor position --- (Using collapse to end logic)
-            debugLogInjected(`Attempting to set cursor position.`);
-            let cursorTarget = targetElement;
-            if (cursorTarget.setSelectionRange && typeof cursorTarget.value === 'string') {
-                try {
-                    cursorTarget.setSelectionRange(textLength, textLength);
-                    debugLogInjected(`Used setSelectionRange(${textLength}, ${textLength})`);
-                } catch (e) { debugLogInjected("Could not set selection range.", 'warn'); console.warn(e); } // Keep original console.warn
-            } else if (cursorTarget.isContentEditable || cursorTarget.contentEditable === 'true') {
-                try {
+            // --- Set cursor position ---
+            debugLogInjected(`Attempting to set cursor position on element: ${elementForEventsAndCursor.tagName}`);
+            elementForEventsAndCursor.focus(); // Ensure the element that got content is focused
+
+            try {
+                if (elementForEventsAndCursor.classList && elementForEventsAndCursor.classList.contains('ql-editor')) {
                     const selection = window.getSelection();
                     const range = document.createRange();
-                    range.selectNodeContents(cursorTarget);
+                    if (elementForEventsAndCursor.childNodes.length > 0) {
+                        range.selectNodeContents(elementForEventsAndCursor);
+                        range.collapse(false); // false for end
+                    } else {
+                        range.setStart(elementForEventsAndCursor, 0);
+                        range.collapse(true); // true if already at start
+                    }
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    debugLogInjected(`Used Selection API for Quill editor (collapsed to end).`);
+                } else if (typeof elementForEventsAndCursor.setSelectionRange === 'function' && typeof elementForEventsAndCursor.value === 'string') {
+                    const len = elementForEventsAndCursor.value.length;
+                    elementForEventsAndCursor.setSelectionRange(len, len);
+                    debugLogInjected(`Used setSelectionRange(${len}, ${len})`);
+                } else if (elementForEventsAndCursor.isContentEditable) { // Generic contentEditable
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    range.selectNodeContents(elementForEventsAndCursor);
                     range.collapse(false);
                     selection.removeAllRanges();
                     selection.addRange(range);
-                    debugLogInjected(`Used Selection API for contentEditable (collapsed to end) after setting innerHTML.`);
-                    // cursorTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                } catch (e) { debugLogInjected("Could not set cursor in contentEditable after innerHTML.", 'warn'); console.warn(e); } // Keep original console.warn
-            }
+                    debugLogInjected(`Used Selection API for generic contentEditable (collapsed to end).`);
+                }
+            } catch (e) { debugLogInjected("Could not set cursor.", 'warn'); console.warn(e); }
 
             // --- Dispatch input/change events ---
             try {
-                debugLogInjected(`Dispatching events (input, change) on target element.`);
-                targetElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-                targetElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-            } catch(e) {
-                 debugLogInjected("Error dispatching events.", 'error'); console.error(e); // Keep original console.error
-            }
+                debugLogInjected(`Dispatching events (input, change) on ${elementForEventsAndCursor.tagName}`);
+                elementForEventsAndCursor.dispatchEvent(new Event('input', { bubbles: true, cancelable: true, composed: true }));
+                elementForEventsAndCursor.dispatchEvent(new Event('change', { bubbles: true, cancelable: true, composed: true }));
 
-            // Final check of textContent value after events
-            let valueAfterEventsText = '';
-            try {
-                if (typeof targetElement.value === 'string') {
-                    valueAfterEventsText = targetElement.value;
-                } else if (targetElement.isContentEditable) {
-                    valueAfterEventsText = targetElement.textContent;
+                if (currentUrl.includes('gemini.google.com')) { // isGemini check
+                    debugLogInjected('Applying Gemini post-injection focus/blur cycle.');
+                    elementForEventsAndCursor.blur();
+                    elementForEventsAndCursor.focus();
+                    // Attempt to set cursor again after blur/focus cycle, as focus can reset it
+                    if (elementForEventsAndCursor.classList && elementForEventsAndCursor.classList.contains('ql-editor')) {
+                         const selection = window.getSelection();
+                         const range = document.createRange();
+                         if (elementForEventsAndCursor.childNodes.length > 0) { range.selectNodeContents(elementForEventsAndCursor); range.collapse(false); }
+                         else { range.setStart(elementForEventsAndCursor, 0); range.collapse(true); }
+                         selection.removeAllRanges(); selection.addRange(range);
+                         debugLogInjected('Cursor reset for Gemini after blur/focus.');
+                    }
                 }
-                 debugLogInjected(`Value (textContent) after dispatching events: ${JSON.stringify(valueAfterEventsText)}`);
-            } catch (e) {
-                 debugLogInjected("Error reading value after events", 'error'); console.error(e); // Keep original console.error
+            } catch(e) {
+                 debugLogInjected("Error dispatching events.", 'error'); console.error(e);
             }
              debugLogInjected(`%cInsertion complete (Mode: ${insertMode}). Final state logged above.`, 'log', 'color: blue; font-weight: bold;');
-
         } else {
-             debugLog('Target element not found for XPath: ' + xpath, 'error'); // Use background script logger
+             debugLog('Target element not found for XPath: ' + xpath, 'error');
         }
     } catch (error) {
-         debugLog("Error inserting text:", 'error'); console.error(error); // Use background script logger, keep original console.error
+         debugLog("Error inserting text:", 'error'); console.error(error);
     }
 }
 
@@ -229,7 +247,7 @@ function matchesUrl(pattern, url) {
         const regex = new RegExp(`^${regexPattern}$`);
         return regex.test(url);
     } catch (e) {
-         debugLog(`Invalid pattern for matching: ${pattern}`, 'error'); console.error(e); // Keep original console.error
+         debugLog(`Invalid pattern for matching: ${pattern}`, 'error'); console.error(e);
         return false;
     }
 }
@@ -238,7 +256,6 @@ function matchesUrl(pattern, url) {
 // --- Get Config for URL (Unchanged) ---
 function getConfigForUrl(configs, url) {
      if (!configs || !url) return null;
-     // Find the first config whose pattern matches the URL
      return configs.find(config => matchesUrl(config.urlPattern, url));
 }
 
@@ -308,7 +325,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
             await chrome.contextMenus.removeAll();
         }
     } catch (error) {
-         debugLog("Error in onActivated listener:", 'error'); console.error(error); // Keep original console.error
+         debugLog("Error in onActivated listener:", 'error'); console.error(error);
          await chrome.contextMenus.removeAll();
     }
 });
@@ -322,7 +339,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
              const matchingConfig = getConfigForUrl(configs, tab.url);
              await updateContextMenuForTab(tabId, matchingConfig);
          } catch (error) {
-             debugLog("Error in onUpdated listener:", 'error'); console.error(error); // Keep original console.error
+             debugLog("Error in onUpdated listener:", 'error'); console.error(error);
              await chrome.contextMenus.removeAll();
          }
      }
@@ -335,7 +352,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     const promptId = info.menuItemId;
-    const currentUrl = tab.url;
+    const currentUrl = tab.url; 
 
     const results = await chrome.storage.local.get([PROMPTS_KEY, CONFIGS_KEY]);
     const prompts = results[PROMPTS_KEY] || [];
@@ -358,20 +375,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     const insertMode = selectedPrompt.insertMode || 'replace';
 
-    debugLog(`Injecting prompt "${selectedPrompt.title}" into site ${matchingConfig.name || matchingConfig.urlPattern} using XPath: ${matchingConfig.xpath} with mode: ${insertMode}`);
+    debugLog(`Injecting prompt "${selectedPrompt.title}" into site ${matchingConfig.name || matchingConfig.urlPattern} (URL: ${currentUrl}) using XPath: ${matchingConfig.xpath} with mode: ${insertMode}`);
 
-    // *** IMPORTANT ***
-    // The injected function `injectTextIntoElement` has its *own* copy of `debugLogInjected`.
-    // It doesn't use the background script's `DEBUGMODE` or `debugLog` directly.
-    // If you need the injected logs to also be conditional, you'd need to pass the DEBUGMODE
-    // state as an argument or modify the injected function source dynamically.
-    // For now, the injected logs (`debugLogInjected`) run unconditionally based on `DEBUGMODE_INJECT`.
     chrome.scripting.executeScript({
         target: { tabId: tab.id, frameIds: [info.frameId || 0] },
-        func: injectTextIntoElement, // This function is stringified and executed in the page
-        args: [selectedPrompt.content, matchingConfig.xpath, insertMode]
+        func: injectTextIntoElement,
+        args: [selectedPrompt.content, matchingConfig.xpath, insertMode, currentUrl] 
     }).catch(err => {
-        debugLog("Error executing script:", 'error'); console.error(err); // Keep original console.error
+        debugLog("Error executing script:", 'error'); console.error(err);
     });
 });
 
@@ -387,14 +398,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const matchingConfig = getConfigForUrl(configs, activeTab.url);
                     await updateContextMenuForTab(activeTab.id, matchingConfig);
                 } catch (error) {
-                    debugLog("Error updating context menu from options message:", 'error'); console.error(error); // Keep original console.error
+                    debugLog("Error updating context menu from options message:", 'error'); console.error(error);
                 }
             } else {
                 await chrome.contextMenus.removeAll();
             }
         });
         sendResponse({ success: true });
-        return true; // Indicate async response possible
+        return true; 
     }
     return false;
 });
@@ -405,4 +416,4 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 
-debugLog("Background script loaded (v1.4 - dynamic menu filtering, conditional logging).");
+debugLog("Background script loaded (v1.6 - Gemini contentEditable parent targeting).");
